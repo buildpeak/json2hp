@@ -1,0 +1,117 @@
+#!/usr/bin/env python
+
+import json,sys,os,re
+
+def dict_get(d, kp):
+    ks = kp.split('.')
+    lk = ks[-1]
+    dd = d
+    for kk in ks[:-1]:
+        if type(dd) == dict and kk in dd:
+            dd = dd[kk]
+        else:
+            return None
+    return dd[lk] if type(dd) == dict and lk in dd else None
+
+def dict_set(d, kp, v):
+    ks = kp.split('.')
+    lk = ks[-1]
+    dd = d
+    for kk in ks[:-1]:
+        if type(dd) == dict and kk in dd:
+            dd = dd[kk]
+        else:
+            return
+    if type(dd) == dict and lk in dd:
+        dd[lk] = v
+
+def update_dict(d, pairs):
+    for pair in pairs:
+        m = re.match(r"([\w.]+)([:=@]=?)(.*)", pair)
+        if m:
+            (kp,op,v) = m.groups()
+            if op == ":=":
+                if re.match(r"\d+\.\d+", v):
+                    v = float(v)
+                elif re.match(r"\d+", v):
+                    v = int(v)
+                elif v.startswith("{"):
+                    v = json.loads(v)
+            dict_set(d,kp,v)
+
+def gen_default_hp(d, outfn):
+    f = open(outfn, "w")
+    for k in d:
+        if type(d[k]) == dict:
+            f.write(k + ":='" + json.dumps(d[k]) + "'\n")
+        elif d[k] == None:
+            f.write(k + ":=null\n")
+        elif type(d[k]) == int:
+            f.write(k + ":=" + str(d[k]) + "\n")
+        elif type(d[k]) == float:
+            f.write(k + ":=" + str(d[k]) + "\n")
+        else:
+            f.write(k + "=" + d[k] + "\n")
+    f.close()
+
+def parse_hp(f):
+    d = {}
+    for ln in f:
+        ln = ln.strip()
+        m = re.match(r"([\w]+)([:=@]=?)(.*)", ln)
+        if m:
+            (k,op,v) = m.groups()
+            if op == "=":
+                d[k] = v
+            elif op == ":=":
+                if v.startswith("'{\""):
+                    d[k] = json.loads(v[1:-1])
+                elif re.match(r"\d+\.\d+", v):
+                    d[k] = float(v)
+                elif re.match(r"\d+", v):
+                    d[k] = int(v)
+                else:
+                    d[k] = None if v == "null" else v
+            else:
+                d[k] = v
+    return d
+
+if __name__ == "__main__":
+    if len(sys.argv) <= 1:
+        print("usage: " + os.path.basename(sys.argv[0]) + " [input_file.{json}] [key[.subkey]=newValue] ...")
+        exit(2)
+
+    infn = sys.argv[1]
+    outfn = ".default.hp"
+
+    pairs = []
+    if len(sys.argv) > 2:
+        pairs = sys.argv[2:]
+
+    if re.match(r"([\w.]+)([:=@]=?)(.*)", sys.argv[1]):
+        infn = outfn
+        pairs = sys.argv[1:]
+
+    if re.match(r"[\w+\- .]+\.hp", infn):
+        with open(infn, "r") as f:
+            d = parse_hp(f)
+            if pairs:
+                update_dict(d, pairs)
+            gen_default_hp(d, outfn)
+            print(outfn)
+    else:
+        prefix = os.path.join(os.getcwd(), "openapi/examples/request")
+        suffix = ".json"
+
+        if not infn.startswith(prefix):
+            infn = os.path.join(prefix, infn)
+        if not infn.endswith(suffix):
+            infn += suffix
+
+        with open(infn, "r") as f:
+            d = json.load(f)
+            if pairs:
+                update_dict(d, pairs)
+            gen_default_hp(d, outfn)
+            print(outfn)
+
